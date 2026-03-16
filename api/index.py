@@ -1,10 +1,9 @@
 from fastapi import FastAPI, Query
-from fastapi.middleware.cors import CORSMiddleware # 1. ADD THIS
+from fastapi.middleware.cors import CORSMiddleware
 import yt_dlp
 
 app = FastAPI()
 
-# 2. ADD THIS (This prevents the app from blocking your Flutter requests)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -14,14 +13,31 @@ app.add_middleware(
 
 @app.get("/search")
 def search(q: str = Query(...)):
+    # Optimized options for speed on Serverless
     ydl_opts = {
         'format': 'bestaudio/best',
         'quiet': True,
-        'extract_flat': False,
+        'no_warnings': True,
+        'extract_flat': 'in_playlist',  # Faster metadata extraction
+        'skip_download': True,
+        'nocheckcertificate': True,
     }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(f"ytsearch5:{q}", download=False)
-        return [{"title": x.get("title"), "url": x.get("url"), "thumb": x.get("thumbnail")} for x in info['entries']]
-
-# 3. Vercel sometimes needs the app to be explicitly assigned to 'handler'
-handler = app
+    
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            # We search specifically for YouTube Music (ytmsearch) for better indexing
+            info = ydl.extract_info(f"ytmsearch5:{q}", download=False)
+            entries = info.get('entries', [])
+            
+            return [
+                {
+                    "title": x.get("title"), 
+                    "url": x.get("url"), 
+                    "thumb": x.get("thumbnail"),
+                    "id": x.get("id")
+                } for x in entries if x is not None
+            ]
+    except Exception as e:
+        # Returning the error as JSON stops the "500 Internal Error" screen 
+        # and tells you exactly what went wrong.
+        return {"error": str(e)}
