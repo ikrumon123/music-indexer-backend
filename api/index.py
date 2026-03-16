@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 import yt_dlp
+import os
 
 app = FastAPI()
 
@@ -11,41 +12,45 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Vercel needs this to handle the request properly
+@app.get("/")
+def read_root():
+    return {"status": "Indexer Active"}
+
 @app.get("/search")
-def search_music(q: str = Query(...)):
-    # These options are based on the latest yt-dlp documentation
+def search(q: str = Query(...)):
+    # Minimalist options to prevent Vercel "Invocation Failed"
     ydl_opts = {
         'format': 'bestaudio/best',
+        'noplaylist': True,
         'quiet': True,
         'no_warnings': True,
-        'extract_flat': True,  # CRITICAL for speed; only gets metadata
-        'nocheckcertificate': True,
+        'extract_flat': True, # This is the most important for serverless
+        'skip_download': True,
     }
-
+    
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # We use ytsearch: to ensure the scraper knows we are searching
-            search_query = f"ytsearch10:{q}" 
-            info = ydl.extract_info(search_query, download=False)
+            # Using standard ytsearch to ensure compatibility
+            search_results = ydl.extract_info(f"ytsearch5:{q}", download=False)
             
-            if 'entries' not in info:
+            if not search_results or 'entries' not in search_results:
                 return {"results": []}
 
-            results = []
-            for entry in info['entries']:
+            output = []
+            for entry in search_results['entries']:
                 if entry:
-                    results.append({
-                        "id": entry.get("id"),
+                    output.append({
                         "title": entry.get("title"),
-                        "uploader": entry.get("uploader"),
-                        "duration": entry.get("duration"),
-                        "thumbnail": entry.get("thumbnail"),
-                        "url": entry.get("url"), # The stream URL for your player
+                        "url": entry.get("url"),
+                        "thumb": entry.get("thumbnail"),
+                        "id": entry.get("id")
                     })
-            
-            return {"results": results}
+            return {"results": output}
             
     except Exception as e:
+        # This will show the actual error in the JSON instead of a 500 page
         return {"error": str(e)}
 
+# Mandatory for Vercel Python Runtime
 handler = app
