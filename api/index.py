@@ -12,32 +12,40 @@ app.add_middleware(
 )
 
 @app.get("/search")
-def search(q: str = Query(...)):
-    # Optimized options for speed on Serverless
+def search_music(q: str = Query(...)):
+    # These options are based on the latest yt-dlp documentation
     ydl_opts = {
         'format': 'bestaudio/best',
         'quiet': True,
         'no_warnings': True,
-        'extract_flat': 'in_playlist',  # Faster metadata extraction
-        'skip_download': True,
+        'extract_flat': True,  # CRITICAL for speed; only gets metadata
         'nocheckcertificate': True,
     }
-    
+
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # We search specifically for YouTube Music (ytmsearch) for better indexing
-            info = ydl.extract_info(f"ytmsearch5:{q}", download=False)
-            entries = info.get('entries', [])
+            # We use ytsearch: to ensure the scraper knows we are searching
+            search_query = f"ytsearch10:{q}" 
+            info = ydl.extract_info(search_query, download=False)
             
-            return [
-                {
-                    "title": x.get("title"), 
-                    "url": x.get("url"), 
-                    "thumb": x.get("thumbnail"),
-                    "id": x.get("id")
-                } for x in entries if x is not None
-            ]
+            if 'entries' not in info:
+                return {"results": []}
+
+            results = []
+            for entry in info['entries']:
+                if entry:
+                    results.append({
+                        "id": entry.get("id"),
+                        "title": entry.get("title"),
+                        "uploader": entry.get("uploader"),
+                        "duration": entry.get("duration"),
+                        "thumbnail": entry.get("thumbnail"),
+                        "url": entry.get("url"), # The stream URL for your player
+                    })
+            
+            return {"results": results}
+            
     except Exception as e:
-        # Returning the error as JSON stops the "500 Internal Error" screen 
-        # and tells you exactly what went wrong.
         return {"error": str(e)}
+
+handler = app
